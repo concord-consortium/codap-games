@@ -359,11 +359,12 @@ const POPULATION_DATA =
       }
     ];
 
+const DEFAULT_DATASET = 'StateData';
+
 const DATASETS = [
   {
     id: 'StateData',
     name: 'CDC COVID State Data',
-    default: true,
     documentation: 'https://data.cdc.gov/Case-Surveillance/United-States-COVID-19-Cases-and-Deaths-by-State-o/9mfq-cb36/data',
     endpoint: 'https://data.cdc.gov/resource/9mfq-cb36.json',
     apiToken: 'CYxytZqW1xHsoBvRkE7C74tUL',
@@ -403,16 +404,17 @@ const DATASETS = [
         }
     ],
     parentAttributes: ['state', 'population'],
+    uiComponents: [
+      {
+        type: 'text',
+        width: 2,
+        name: 'stateCode',
+        apiName: 'state',
+        label: 'Enter Two Char State Abbr'
+      }
+    ],
     uiCreate: function (parentEl) {
-      parentEl.append(createElement('div', null, [
-          createElement('label', null, [
-              'Enter Two Char State Abbr: ',
-              createElement('input', null, [
-                  createAttribute('type', 'text'),
-                  createAttribute('style', 'width: 2em;')
-              ])
-          ])
-        ]));
+      parentEl.append(createUIControl(this.uiComponents[0]));
     },
     makeURL: function () {
       let stateCode = document.querySelector(`#StateData input[type=text]`).value;
@@ -459,21 +461,72 @@ const DATASETS = [
     }
   },
   {
+    id: 'VaccinesHistorical',
+    name: 'CDC COVID-19 Vaccinations in the United States, County',
+    endpoint: 'https://data.cdc.gov/resource/8xkx-amqh.json',
+    apiToken: 'CYxytZqW1xHsoBvRkE7C74tUL',
+    documentation: 'https://data.cdc.gov/Vaccinations/COVID-19-Vaccinations-in-the-United-States-County/8xkx-amqh',
+    parentAttributes: ['recip_state', 'recip_county'],
+    overriddenAttributes: [
+      {
+        name: 'date',
+        type: 'date'
+      }
+    ],
+    uiComponents: [
+      {
+        type: 'text',
+        width: 2,
+        name: 'stateCode',
+        apiName: 'recip_state',
+        label: 'Enter Two Char State Code'
+      }
+    ],
+    uiCreate: function (parentEl) {
+      parentEl.append(createUIControl(this.uiComponents[0]));
+    },
+    makeURL: function () {
+      let stateCode = document.querySelector(`#${this.id} input[type=text]`).value;
+      let limitPhrase = `$limit=100000`
+      let stateCodePhrase = stateCode? `recip_state=${stateCode.toUpperCase()}&`: '';
+      if (stateCode) {
+        return this.endpoint + `?${stateCodePhrase}&${limitPhrase}`;
+      } else {
+        message('Please enter two character state code');
+      }
+    }
+  },
+  {
     id: 'DeathConds',
     name: 'CDC COVID Contributing Conditions',
     documentation: 'https://www.splitgraph.com/cdc-gov/conditions-contributing-to-deaths-involving-hk9y-quqm',
     endpoint: 'https://data.cdc.gov/resource/hk9y-quqm.json',
     apiToken: 'CYxytZqW1xHsoBvRkE7C74tUL',
+    overriddenAttributes: [
+      {
+        name: 'data_as_of',
+        type: 'date'
+      },
+      {
+        name: 'start_date',
+        type: 'date'
+      },
+      {
+        name: 'end_date',
+        type: 'date'
+      },
+    ],
+    uiComponents: [
+      {
+        type: 'text',
+        width: 12,
+        name: 'state',
+        apiName: 'state',
+        label: 'Enter full state name'
+      }
+    ],
     uiCreate: function (parentEl) {
-      parentEl.append(createElement('div', null, [
-        createElement('label', null, [
-          'Enter full state name: ',
-          createElement('input', null, [
-            createAttribute('type', 'text'),
-            createAttribute('style', 'width: 12em;')
-          ])
-        ])
-      ]));
+      parentEl.append(createUIControl(this.uiComponents[0]));
     },
     makeURL: function () {
       let stateName = document.querySelector(`#${this.id} input[type=text]`).value;
@@ -490,16 +543,17 @@ const DATASETS = [
     documentation: 'https://data.cdc.gov/NCHS/Excess-Deaths-Associated-with-COVID-19/xkkf-xrst',
     endpoint: 'https://data.cdc.gov/resource/xkkf-xrst.json',
     apiToken: 'CYxytZqW1xHsoBvRkE7C74tUL',
+    uiComponents: [
+      {
+        type: 'text',
+        width: 12,
+        name: 'state',
+        apiName: 'state',
+        label: 'Enter full state name'
+      }
+    ],
     uiCreate: function (parentEl) {
-      parentEl.append(createElement('div', null, [
-        createElement('label', null, [
-          'Enter full state name: ',
-          createElement('input', null, [
-            createAttribute('type', 'text'),
-            createAttribute('style', 'width: 12em;')
-          ])
-        ])
-      ]));
+      parentEl.append(createUIControl(this.uiComponents[0]));
     },
     makeURL: function () {
       let stateCode = document.querySelector(`#${this.id} input[type=text]`).value;
@@ -795,6 +849,14 @@ var displayedDatasets = DEFAULT_DISPLAYED_DATASETS;
 let downsampleGoal = DOWNSAMPLE_GOAL_DEFAULT;
 let isInFetch = false;
 
+/**
+ * A utility to merge state population stats with a dataset.
+ * @param data {[object]} attribute keyed data
+ * @param referenceKeyAttr {string} the name of the attribute in the merged into dataset that
+ *                         is a foreign key into the population dataset.
+ * @param correlatedKey    {string} the corresponding key in the population dataset
+ * @return {[object]} the data object modified
+ */
 function mergePopulation(data, referenceKeyAttr, correlatedKey) {
   let cached = null;
   data.forEach(function(dataItem) {
@@ -811,10 +873,38 @@ function mergePopulation(data, referenceKeyAttr, correlatedKey) {
   return data;
 }
 
+/**
+ * A utility to sort a dataset on a date attribute.
+ * @param data {[object]}
+ * @param attr {string}
+ * @return {[object]} 'data' sorted
+ */
 function sortOnDateAttr(data, attr) {
   return data.sort(function (a, b) {
     return (new Date(a[attr])) - (new Date(b[attr]));
   })
+}
+
+function createTextControl(def) {
+  let w = def.width || 10;
+  let l = def.label || '';
+  let n = def.name || '';
+  return createElement('div', null, [createElement('label', null,
+      [`${l}: `, createElement('input', null,
+          [createAttribute('type', 'text'), createAttribute('name',
+              n), createAttribute('style', `width: ${w}em;`)])])]);
+}
+
+function createUIControl(def) {
+  let el;
+  switch (def.type) {
+    case 'text':
+      el = createTextControl(def);
+      break;
+    default:
+      console.warn(`createUIControl: unknown type: ${def.type}`);
+  }
+  return el;
 }
 
 /**
@@ -951,7 +1041,7 @@ function setBusy(isBusy) {
   isInFetch = isBusy;
 }
 
-function fetchHandler(ev) {
+function fetchHandler(/*ev*/) {
   if (!isInFetch)
   setBusy(true);
   fetchDataAndProcess().then(
@@ -997,7 +1087,7 @@ function createUI () {
 
       ds.uiCreate(el);
       anchor.append(el);
-      if (ds.default) {
+      if (ds.id === DEFAULT_DATASET) {
         let input = el.querySelector('input');
         input.checked = true;
         el.classList.add('selected-source')
