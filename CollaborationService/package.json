@@ -1,8 +1,0 @@
-{
-  "name": "collaboration-service",
-  "version": "1.0.0",
-  "description": "",
-  "main": "js/CollaborationService.js",
-  "author": "Doug Martin",
-  "license": "MIT"
-}
